@@ -161,6 +161,23 @@ export const en = {
     deleteActions: "Delete accepted actions and cancel their reminders",
     confirmDelete: "Delete capture",
     deleted: "Capture deleted.",
+    bulkTitle: "Review faster",
+    bulkIntro:
+      "Set the date once for every suggestion below. Times found in the capture are already filled in; you still check and accept each one.",
+    bulkDate: "Date for all suggestions",
+    bulkApply: "Apply to all suggestions",
+    bulkApplied: {
+      one: "Date applied to {count} suggestion. Check it, then accept.",
+      other: "Date applied to {count} suggestions. Check each, then accept.",
+    },
+    bulkDateRequired: "Choose a date first.",
+    dismissAll: "Dismiss all remaining",
+    dismissAllConfirm: "Dismiss all {count} remaining suggestions? Nothing from them will be saved.",
+    dismissAllDone: "Remaining suggestions dismissed.",
+    pendingCount: {
+      one: "{count} suggestion to review",
+      other: "{count} suggestions to review",
+    },
   },
   review: {
     heading: "Suggested {type}",

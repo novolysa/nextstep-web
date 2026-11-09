@@ -64,19 +64,61 @@ export function draftFromSuggestion(suggestion: Suggestion, defaultTimezone: str
   draft.details = suggestion.details ?? "";
   draft.sourceCaptureId = suggestion.captureId;
   const date = suggestion.date;
+  const field = PRIMARY_DATE[suggestion.type];
   if (date && !date.ambiguous && date.candidateInstant && date.timezone && isValidTimezone(date.timezone)) {
     draft.timezone = date.timezone;
-    const field: DateField | undefined =
-      suggestion.type === "event"
-        ? "start"
-        : suggestion.type === "reminder"
-          ? "remind"
-          : suggestion.type === "task"
-            ? "due"
-            : undefined;
     if (field) draft[field] = toLocal(date.candidateInstant, date.timezone);
+  } else if (date && field) {
+    // Ambiguous text: prefill only parts stated exactly (a clock time, an ISO date). The user
+    // still supplies anything missing and confirms before accepting.
+    const hint = dateHint(date.extractedText);
+    draft[field] = { date: hint.date ?? "", time: hint.time ?? "" };
   }
   return draft;
+}
+
+/** The date field a suggestion's extracted date belongs to, per action type. */
+export const PRIMARY_DATE: Record<ActionType, DateField | undefined> = {
+  task: "due",
+  reminder: "remind",
+  event: "start",
+  list_item: undefined,
+};
+
+/**
+ * Exact parts of an extracted date phrase: a clock time ("9:00", "17:30", "9am", "6:30 pm",
+ * or the start of a range "7–8pm") and an ISO calendar date. Weekdays, relative words and
+ * dates without a year are left for the user.
+ */
+export function dateHint(text: string): { date?: string; time?: string } {
+  const result: { date?: string; time?: string } = {};
+  const iso = /\b(\d{4})-(\d{2})-(\d{2})\b/.exec(text);
+  if (iso) {
+    const [y, m, d] = [Number(iso[1]), Number(iso[2]), Number(iso[3])];
+    const check = new Date(Date.UTC(y, m - 1, d));
+    if (check.getUTCFullYear() === y && check.getUTCMonth() === m - 1 && check.getUTCDate() === d) result.date = iso[0];
+  }
+  const time =
+    /(?<![\d/.-])(\d{1,2})(?:[:.](\d{2}))?\s*(?:([ap])\.?m\.?)?(?:\s*(?:[–—-]|to)\s*\d{1,2}(?:[:.]\d{2})?\s*([ap])\.?m\.?)?(?![\d/])/i.exec(
+      text.replace(/\b\d{4}-\d{2}-\d{2}\b/, " "),
+    );
+  if (time && (time[2] !== undefined || time[3] || time[4])) {
+    let hour = Number(time[1]);
+    const minute = Number(time[2] ?? 0);
+    const meridiem = (time[3] ?? time[4])?.toLowerCase();
+    if (meridiem && (hour < 1 || hour > 12)) return result;
+    if (meridiem === "p" && hour < 12) hour += 12;
+    if (meridiem === "a" && hour === 12) hour = 0;
+    if (hour <= 23 && minute <= 59) result.time = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  }
+  return result;
+}
+
+/** Set the calendar date (and time zone) of a draft's primary date, keeping its time. */
+export function applyDate(draft: ActionDraft, date: string, timezone: string): ActionDraft {
+  const field = PRIMARY_DATE[draft.type];
+  if (!field) return draft;
+  return { ...draft, timezone, [field]: { date, time: draft[field].time } };
 }
 
 export function draftFromAction(action: Action, defaultTimezone: string): ActionDraft {

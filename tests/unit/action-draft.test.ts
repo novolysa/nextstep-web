@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildActionInput, draftFromAction, draftFromSuggestion, emptyDraft } from "@/lib/action-draft";
+import {
+  applyDate,
+  buildActionInput,
+  dateHint,
+  draftFromAction,
+  draftFromSuggestion,
+  emptyDraft,
+} from "@/lib/action-draft";
 import type { Suggestion } from "@/lib/api/client";
 
 const suggestion = (overrides: Partial<Suggestion> = {}): Suggestion => ({
@@ -119,5 +126,42 @@ describe("action drafts", () => {
     );
     expect(draft.timezone).toBe("Asia/Tokyo");
     expect(draft.remind).toEqual({ date: "2026-06-01", time: "17:00" });
+  });
+});
+
+describe("date hints from extracted text", () => {
+  it("reads clock times without guessing a date", () => {
+    expect(dateHint("9:00")).toEqual({ time: "09:00" });
+    expect(dateHint("17:30")).toEqual({ time: "17:30" });
+    expect(dateHint("9am")).toEqual({ time: "09:00" });
+    expect(dateHint("12am")).toEqual({ time: "00:00" });
+    expect(dateHint("7–8pm")).toEqual({ time: "19:00" });
+    expect(dateHint("2026-11-10")).toEqual({ date: "2026-11-10" });
+  });
+
+  it("ignores ambiguous numbers and relative words", () => {
+    expect(dateHint("03/04")).toEqual({});
+    expect(dateHint("Friday")).toEqual({});
+    expect(dateHint("at 9")).toEqual({});
+  });
+
+  it("prefills only the time for an ambiguous extracted time", () => {
+    const draft = draftFromSuggestion(
+      suggestion({ type: "reminder", date: { extractedText: "9:30am", ambiguous: true, requiresConfirmation: true } }),
+      "Europe/Berlin",
+    );
+    expect(draft.remind).toEqual({ date: "", time: "09:30" });
+  });
+
+  it("applies a chosen date to the primary field and keeps the time", () => {
+    const draft = draftFromSuggestion(
+      suggestion({ type: "event", date: { extractedText: "2pm", ambiguous: true, requiresConfirmation: true } }),
+      "UTC",
+    );
+    const applied = applyDate(draft, "2026-11-10", "Europe/Berlin");
+    expect(applied.start).toEqual({ date: "2026-11-10", time: "14:00" });
+    expect(applied.timezone).toBe("Europe/Berlin");
+    const list = applyDate(emptyDraft("UTC", "list_item"), "2026-11-10", "Europe/Berlin");
+    expect(list).toEqual(emptyDraft("UTC", "list_item"));
   });
 });

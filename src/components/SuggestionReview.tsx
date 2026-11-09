@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { ActionFields } from "./ActionFields";
 import { ErrorState, FieldError, StatusBadge } from "./ui";
 import {
+  applyDate,
   buildActionInput,
+  DATE_FIELDS,
   draftFieldFor,
   draftFromSuggestion,
   type ActionDraft,
@@ -36,7 +38,10 @@ export function SuggestionReview({
   lists,
   onListCreated,
   onResolved,
+  registerDateApplier,
 }: {
+  /** Lets the page apply one date to every open review (an explicit user action). */
+  registerDateApplier?: (id: string, apply: (date: string, timezone: string) => void) => () => void;
   suggestion: Suggestion;
   lists: List[] | undefined;
   onListCreated: (list: List) => void;
@@ -56,7 +61,17 @@ export function SuggestionReview({
   const built = buildActionInput(draft);
   // Same key for retries of an identical request; a new key once the reviewed values change.
   const idempotencyKey = useIdempotencyKey(built.ok ? JSON.stringify(built.input) : "invalid");
-  const hasDate = Boolean(suggestion.date) || (built.ok && Boolean(built.input.timezone));
+  const hasDate =
+    DATE_FIELDS[draft.type].length > 0 && (Boolean(suggestion.date) || (built.ok && Boolean(built.input.timezone)));
+
+  useEffect(
+    () =>
+      registerDateApplier?.(suggestion.id, (date, timezone) => {
+        setDraft((current) => applyDate(current, date, timezone));
+        setDateConfirmed(false);
+      }),
+    [registerDateApplier, suggestion.id],
+  );
 
   const accept = async () => {
     const result = buildActionInput(draft);

@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useId, useState } from "react";
+import { useCallback, useId, useRef, useState } from "react";
+import { BulkReviewTools } from "@/components/BulkReviewTools";
 import { CapturePreview } from "@/components/CapturePreview";
 import { SuggestionReview } from "@/components/SuggestionReview";
 import { EmptyState, ErrorState, LoadingState, PageHeader, StatusBadge } from "@/components/ui";
@@ -13,7 +14,7 @@ import { useI18n } from "@/lib/i18n";
 
 export default function CaptureDetailPage() {
   const { captureId } = useParams<{ captureId: string }>();
-  const { t, formatDateTime } = useI18n();
+  const { t, plural, formatDateTime } = useI18n();
   const api = useApi();
   const announce = useAnnounce();
   const router = useRouter();
@@ -34,6 +35,13 @@ export default function CaptureDetailPage() {
   const [linkedActions, setLinkedActions] = useState<"keep" | "delete">("keep");
   const [deleting, setDeleting] = useState(false);
   const [acceptedActions, setAcceptedActions] = useState<Record<string, Action>>({});
+  const appliers = useRef(new Map<string, (date: string, timezone: string) => void>());
+  const registerDateApplier = useCallback((id: string, apply: (date: string, timezone: string) => void) => {
+    appliers.current.set(id, apply);
+    return () => {
+      appliers.current.delete(id);
+    };
+  }, []);
 
   if (capture.error && !capture.data)
     return (
@@ -78,6 +86,22 @@ export default function CaptureDetailPage() {
     suggestions.setData((items) => items?.map((s) => (s.id === resolved.id ? resolved : s)));
   };
   const pending = suggestions.data?.filter((s) => s.status === "needs-review") ?? [];
+  const applyDateToAll = (date: string, timezone: string) => {
+    appliers.current.forEach((apply) => apply(date, timezone));
+    return pending.filter((s) => s.type !== "list_item").length;
+  };
+  const dismissAll = async () => {
+    setActionError(undefined);
+    for (const suggestion of pending) {
+      try {
+        await api.suggestions.dismiss(suggestion.id);
+        onResolved({ ...suggestion, status: "dismissed" });
+      } catch (e) {
+        setActionError(toApiError(e));
+        return;
+      }
+    }
+  };
   const reviewed = suggestions.data?.filter((s) => s.status !== "needs-review") ?? [];
 
   return (
@@ -125,9 +149,14 @@ export default function CaptureDetailPage() {
                 <p>{t("detail.noSuggestions")}</p>
               </EmptyState>
             )}
+          {pending.length > 0 && <p className="muted">{plural("detail.pendingCount", pending.length)}</p>}
+          {pending.length > 1 && (
+            <BulkReviewTools count={pending.length} onApplyDate={applyDateToAll} onDismissAll={dismissAll} />
+          )}
           {pending.map((suggestion) => (
             <SuggestionReview
               key={suggestion.id}
+              registerDateApplier={registerDateApplier}
               suggestion={suggestion}
               lists={lists.data}
               onListCreated={(list) => lists.setData((items) => [...(items ?? []), list])}

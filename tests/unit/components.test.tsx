@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { BulkReviewTools } from "@/components/BulkReviewTools";
 import { CaptureComposer } from "@/components/CaptureComposer";
 import { SuggestionReview } from "@/components/SuggestionReview";
 import { ErrorState } from "@/components/ui";
@@ -94,6 +95,30 @@ describe("SuggestionReview", () => {
     expect(screen.getByText("Reference: req-9")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Dismiss" }));
     await waitFor(() => expect(onResolved).toHaveBeenCalledWith(expect.objectContaining({ status: "dismissed" })));
+  });
+});
+
+describe("BulkReviewTools", () => {
+  it("requires a date, applies it on request and confirms before dismissing all", async () => {
+    const user = userEvent.setup();
+    const onApplyDate = vi.fn(() => 3);
+    const onDismissAll = vi.fn(async () => {});
+    const { container } = renderWithProviders(
+      <BulkReviewTools count={3} onApplyDate={onApplyDate} onDismissAll={onDismissAll} />,
+    );
+    expect(await seriousViolations(container)).toEqual([]);
+    await user.click(screen.getByRole("button", { name: "Apply to all suggestions" }));
+    expect(onApplyDate).not.toHaveBeenCalled();
+    expect(screen.getByText("Choose a date first.")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Date for all suggestions"), { target: { value: "2026-11-10" } });
+    await user.click(screen.getByRole("button", { name: "Apply to all suggestions" }));
+    expect(onApplyDate).toHaveBeenCalledWith("2026-11-10", expect.any(String));
+
+    await user.click(screen.getByRole("button", { name: "Dismiss all remaining" }));
+    expect(onDismissAll).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Dismiss all remaining" }));
+    expect(onDismissAll).toHaveBeenCalledTimes(1);
   });
 });
 
