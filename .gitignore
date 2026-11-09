@@ -2,6 +2,13 @@ node_modules/
 dist/
 build/
 coverage/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+playwright-report/
+test-results/
+playwright/.auth/
 .env
 .env.*
 !.env.example
