@@ -5,6 +5,7 @@ import { useEffect, useId, useState } from "react";
 import { ActionFields } from "./ActionFields";
 import { ErrorState, FieldError, StatusBadge } from "./ui";
 import {
+  proposeDate,
   applyDate,
   buildActionInput,
   DATE_FIELDS,
@@ -47,7 +48,8 @@ export function SuggestionReview({
   onListCreated: (list: List) => void;
   onResolved: (suggestion: Suggestion, action?: Action) => void;
 }) {
-  const { t, timezone, locale, formatDateTime } = useI18n();
+  const { t, timezone, locale, formatDateTime, formatDate } = useI18n();
+  const proposal = suggestion.date?.candidateInstant ? undefined : proposeDate(suggestion, timezone);
   const api = useApi();
   const announce = useAnnounce();
   const id = useId();
@@ -155,17 +157,19 @@ export function SuggestionReview({
           </blockquote>
         </figure>
       )}
-      {suggestion.date && (
-        <div className={suggestion.date.ambiguous ? "notice notice-warning" : "notice"}>
-          <p>{t("review.extractedDate", { text: suggestion.date.extractedText })}</p>
+      {(suggestion.date || proposal) && (
+        <div className={!suggestion.date || suggestion.date.ambiguous ? "notice notice-warning" : "notice"}>
+          {suggestion.date && <p>{t("review.extractedDate", { text: suggestion.date.extractedText })}</p>}
           <p>
-            {suggestion.date.ambiguous || !suggestion.date.candidateInstant
-              ? t("review.dateAmbiguous")
-              : t("review.dateSuggested", {
-                  value: formatDateTime(suggestion.date.candidateInstant, suggestion.date.timezone, {
-                    timeZoneName: "short",
-                  }),
-                })}
+            {proposal
+              ? t("review.dateProposed", { date: formatDate(`${proposal.date}T12:00:00Z`, "UTC"), text: proposal.from })
+              : !suggestion.date || suggestion.date.ambiguous || !suggestion.date.candidateInstant
+                ? t("review.dateAmbiguous")
+                : t("review.dateSuggested", {
+                    value: formatDateTime(suggestion.date.candidateInstant, suggestion.date.timezone, {
+                      timeZoneName: "short",
+                    }),
+                  })}
           </p>
         </div>
       )}

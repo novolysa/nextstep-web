@@ -3,9 +3,11 @@ import {
   applyDate,
   buildActionInput,
   dateHint,
+  dayFromText,
   draftFromAction,
   draftFromSuggestion,
   emptyDraft,
+  proposeDate,
 } from "@/lib/action-draft";
 import type { Suggestion } from "@/lib/api/client";
 
@@ -163,5 +165,47 @@ describe("date hints from extracted text", () => {
     expect(applied.timezone).toBe("Europe/Berlin");
     const list = applyDate(emptyDraft("UTC", "list_item"), "2026-11-10", "Europe/Berlin");
     expect(list).toEqual(emptyDraft("UTC", "list_item"));
+  });
+});
+
+describe("proposed dates from day words", () => {
+  const today = "2026-11-09"; // a Monday
+
+  it("reads weekdays, relative words and month-day dates relative to the capture day", () => {
+    expect(dayFromText("Tuesday, Nov 10", today)).toBe("2026-11-10");
+    expect(dayFromText("Friday", today)).toBe("2026-11-13");
+    expect(dayFromText("monday", today)).toBe("2026-11-09");
+    expect(dayFromText("next Monday", today)).toBe("2026-11-16");
+    expect(dayFromText("tomorrow", today)).toBe("2026-11-10");
+    expect(dayFromText("tonight", today)).toBe("2026-11-09");
+    expect(dayFromText("10th of December", today)).toBe("2026-12-10");
+    expect(dayFromText("Jan 3", today)).toBe("2027-01-03");
+    expect(dayFromText("Feb 30", today)).toBeUndefined();
+    expect(dayFromText("March 1, 2028", today)).toBe("2028-03-01");
+  });
+
+  it("does not read dates from look-alike words or bare numbers", () => {
+    for (const text of ["03/04", "check the monitor", "sunny walk", "may I", "9:00", "Saturdays are busy"])
+      expect(dayFromText(text, today)).toBeUndefined();
+  });
+
+  it("uses heading context in details and keeps the found time", () => {
+    const s = suggestion({
+      type: "event",
+      createdAt: "2026-11-09T21:00:00Z",
+      details: "Plan for Tuesday, Nov 10 · Morning (7:00–12:00)",
+      date: { extractedText: "9:00", ambiguous: true, requiresConfirmation: true },
+    });
+    expect(proposeDate(s, "Europe/Berlin")).toEqual({ date: "2026-11-10", from: "Tuesday, Nov 10" });
+    expect(draftFromSuggestion(s, "Europe/Berlin").start).toEqual({ date: "2026-11-10", time: "09:00" });
+  });
+
+  it("reads the capture day in the user's time zone", () => {
+    const late = suggestion({
+      createdAt: "2026-11-09T23:30:00Z",
+      date: { extractedText: "tomorrow", ambiguous: true, requiresConfirmation: true },
+    });
+    expect(draftFromSuggestion(late, "UTC").due.date).toBe("2026-11-10");
+    expect(draftFromSuggestion(late, "Asia/Tokyo").due.date).toBe("2026-11-11");
   });
 });

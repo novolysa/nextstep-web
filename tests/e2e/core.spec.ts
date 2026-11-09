@@ -21,7 +21,7 @@ test("capture → review and correct → accept creates an action linked to its 
   const card = page.getByTestId("suggestion");
   await expect(card).toBeVisible({ timeout: 30_000 });
   await expect(card.locator("mark")).toHaveText("Friday");
-  await expect(card.getByText(/This date is ambiguous/)).toBeVisible();
+  await expect(card.getByText(/Proposed date: .*“Friday”/)).toBeVisible();
 
   await card.getByRole("textbox", { name: /^Title/ }).fill(`${title} (edited)`);
   const due = card.getByRole("group", { name: /Due date/ });
@@ -107,4 +107,44 @@ test("another user's capture is not accessible", async ({ browser }) => {
   );
   await expect(otherPage.locator(".original-text")).toHaveCount(0);
   await otherContext.close();
+});
+
+test("a free-form plan becomes several suggestions that can be dated together and dismissed", async ({ page }) => {
+  const [user] = testUsers();
+  const id = run();
+  await signIn(page, user!, "/capture");
+  await captureText(
+    page,
+    [
+      `# Plan ${id}`,
+      "## Morning",
+      `- [ ] 9:00 Call the dentist ${id}`,
+      `- [ ] Email Sam about the invoice ${id}`,
+      "## Groceries",
+      `- Oat milk ${id}`,
+      `- [x] Already done ${id}`,
+    ].join("\n"),
+  );
+
+  const cards = page.getByTestId("suggestion");
+  await expect(cards.first()).toBeVisible({ timeout: 30_000 });
+  await expect(cards).toHaveCount(3);
+  await expect(page.getByText("3 suggestions to review")).toBeVisible();
+  await expect(page.getByText(`Already done ${id}`, { exact: true })).toHaveCount(0);
+
+  const dentist = cards.filter({ hasText: `Call the dentist ${id}` });
+  await expect(dentist.getByRole("group", { name: /date/i }).first().getByLabel("Time")).toHaveValue("09:00");
+
+  const tools = page.getByTestId("bulk-tools");
+  await tools.getByLabel("Date for all suggestions").fill("2026-11-10");
+  await tools.getByRole("button", { name: "Apply to all suggestions" }).click();
+  await expect(dentist.getByRole("group", { name: /date/i }).first().getByLabel("Date")).toHaveValue("2026-11-10");
+
+  await dentist.getByLabel(/I've checked the date/).check();
+  await dentist.getByRole("button", { name: "Accept" }).click();
+  await expect(page.getByRole("link", { name: `View action: Call the dentist ${id}` })).toBeVisible();
+
+  await tools.getByRole("button", { name: "Dismiss all remaining" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Dismiss all remaining" }).click();
+  await expect(cards).toHaveCount(0);
 });

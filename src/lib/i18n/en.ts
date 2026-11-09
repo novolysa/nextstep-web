@@ -186,6 +186,8 @@ export const en = {
     lowConfidence: "Low confidence — check carefully.",
     extractedDate: "Date found in the capture: “{text}”",
     dateAmbiguous: "This date is ambiguous. Enter the exact date, time and time zone you mean.",
+    dateProposed:
+      "Proposed date: {date}, read from “{text}” relative to when you captured this. Check the date, time and time zone before accepting.",
     dateSuggested: "Suggested as {value}. Check it before accepting.",
     confirmDate: "I've checked the date, time and time zone.",
     confirmDateRequired: "Confirm the date and time before accepting.",

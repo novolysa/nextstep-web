@@ -68,13 +68,90 @@ export function draftFromSuggestion(suggestion: Suggestion, defaultTimezone: str
   if (date && !date.ambiguous && date.candidateInstant && date.timezone && isValidTimezone(date.timezone)) {
     draft.timezone = date.timezone;
     if (field) draft[field] = toLocal(date.candidateInstant, date.timezone);
-  } else if (date && field) {
-    // Ambiguous text: prefill only parts stated exactly (a clock time, an ISO date). The user
-    // still supplies anything missing and confirms before accepting.
-    const hint = dateHint(date.extractedText);
-    draft[field] = { date: hint.date ?? "", time: hint.time ?? "" };
+  } else if (field && (date || suggestion.details)) {
+    // Ambiguous text: prefill the stated time, and propose a calendar date by reading day words
+    // ("Tuesday, Nov 10", "tomorrow") relative to when the suggestion was made. Nothing is
+    // saved until the user checks the date, time and time zone and confirms.
+    const hint = date ? dateHint(date.extractedText) : {};
+    const proposed = hint.date ? undefined : proposeDate(suggestion, defaultTimezone);
+    if (hint.time || hint.date || proposed)
+      draft[field] = { date: hint.date ?? proposed?.date ?? "", time: hint.time ?? "" };
   }
   return draft;
+}
+
+const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+const MONTH =
+  "(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\\.?";
+const MONTH_DAY = new RegExp(`\\b${MONTH}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?:,?\\s+(\\d{4})\\b)?`, "i");
+const DAY_MONTH = new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?${MONTH}(?:,?\\s+(\\d{4})\\b)?`, "i");
+const WEEKDAY =
+  /\b(next\s+|this\s+)?(sun(?:day)?|mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?)\b/i;
+const RELATIVE = /\b(today|tonight|this (?:morning|afternoon|evening)|tomorrow|day after tomorrow)\b/i;
+
+function addDays(isoDate: string, days: number): string {
+  const [y, m, d] = isoDate.split("-").map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+function validDate(y: number, m: number, d: number): string | undefined {
+  const check = new Date(Date.UTC(y, m - 1, d));
+  if (check.getUTCFullYear() !== y || check.getUTCMonth() !== m - 1 || check.getUTCDate() !== d) return undefined;
+  return check.toISOString().slice(0, 10);
+}
+
+/** A calendar date read from day words in text, relative to a local reference date. */
+export function dayFromText(text: string, today: string): string | undefined {
+  const [ty] = today.split("-").map(Number) as [number];
+  const monthDay = MONTH_DAY.exec(text);
+  const dayMonth = monthDay ? undefined : DAY_MONTH.exec(text);
+  if (monthDay || dayMonth) {
+    const month = MONTHS.indexOf((monthDay ? monthDay[1]! : dayMonth![2]!).slice(0, 3).toLowerCase()) + 1;
+    const day = Number(monthDay ? monthDay[2] : dayMonth![1]);
+    const year = monthDay?.[3] ?? dayMonth?.[3];
+    if (year) return validDate(Number(year), month, day);
+    // No year: the next occurrence on or after today.
+    const thisYear = validDate(ty, month, day);
+    return thisYear && thisYear >= today ? thisYear : validDate(ty + 1, month, day);
+  }
+  const relative = RELATIVE.exec(text)?.[1]?.toLowerCase();
+  if (relative) return addDays(today, relative === "tomorrow" ? 1 : relative === "day after tomorrow" ? 2 : 0);
+  const weekday = WEEKDAY.exec(text);
+  if (weekday) {
+    const target = WEEKDAYS.indexOf(weekday[2]!.slice(0, 3).toLowerCase());
+    const [y, m, d] = today.split("-").map(Number) as [number, number, number];
+    let ahead = (target - new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 7) % 7;
+    if (ahead === 0 && weekday[1]?.trim().toLowerCase() === "next") ahead = 7;
+    return addDays(today, ahead);
+  }
+  return undefined;
+}
+
+/**
+ * Propose a calendar date for an ambiguous suggestion from its extracted text, then its
+ * details (which carry heading context such as "Plan for Tuesday, Nov 10"), relative to the
+ * local date when the suggestion was created. Returns the phrase used so the UI can say so.
+ */
+export function proposeDate(suggestion: Suggestion, timezone: string): { date: string; from: string } | undefined {
+  if (!isValidTimezone(timezone) || !Number.isFinite(Date.parse(suggestion.createdAt))) return undefined;
+  const today = toLocal(suggestion.createdAt, timezone).date;
+  for (const text of [suggestion.date?.extractedText, suggestion.details]) {
+    if (!text) continue;
+    const date = dayFromText(text, today);
+    if (date) return { date, from: text === suggestion.date?.extractedText ? text : (phraseIn(text) ?? text) };
+  }
+  return undefined;
+}
+
+function phraseIn(text: string): string | undefined {
+  const dated = MONTH_DAY.exec(text) ?? DAY_MONTH.exec(text);
+  if (dated) {
+    // Include a weekday written just before it ("Tuesday, Nov 10").
+    const before = /\b[a-z]+day,?\s+$/i.exec(text.slice(0, dated.index));
+    return before && WEEKDAY.test(before[0]) ? text.slice(before.index, dated.index + dated[0].length) : dated[0];
+  }
+  return (RELATIVE.exec(text) ?? WEEKDAY.exec(text))?.[0];
 }
 
 /** The date field a suggestion's extracted date belongs to, per action type. */

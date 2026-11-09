@@ -32,7 +32,9 @@ describe("SuggestionReview", () => {
     );
     expect(screen.getByText("Friday", { selector: "mark" })).toBeInTheDocument();
     expect(screen.getByText(/Low confidence/)).toBeInTheDocument();
-    expect(screen.getByText(/This date is ambiguous/)).toBeInTheDocument();
+    expect(screen.getByText(/Proposed date: .*Nov 13, 2026.*“Friday”/)).toBeInTheDocument();
+    const due = screen.getByRole("group", { name: /Due date/ });
+    expect(within(due).getByLabelText("Date")).toHaveValue("2026-11-13");
     expect(screen.getByText("Confidence: 45%")).toBeInTheDocument();
     expect(accept).not.toHaveBeenCalled();
     expect(await seriousViolations(container)).toEqual([]);
