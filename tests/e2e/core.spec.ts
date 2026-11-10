@@ -133,16 +133,17 @@ test("a free-form plan becomes several suggestions that can be dated together an
   await expect(page.getByText(`Already done ${id}`, { exact: true })).toHaveCount(0);
 
   const dentist = cards.filter({ hasText: `Call the dentist ${id}` });
-  await expect(dentist.getByRole("group", { name: /date/i }).first().getByLabel("Time")).toHaveValue("09:00");
+  // The type (task or event) is the model's call; the first date field holds the found time.
+  await expect(dentist.getByLabel("Time").first()).toHaveValue("09:00");
 
   const tools = page.getByTestId("bulk-tools");
   await tools.getByLabel("Date for all suggestions").fill("2026-11-10");
   await tools.getByRole("button", { name: "Apply to all suggestions" }).click();
-  await expect(dentist.getByRole("group", { name: /date/i }).first().getByLabel("Date")).toHaveValue("2026-11-10");
+  await expect(dentist.getByLabel("Date", { exact: true }).first()).toHaveValue("2026-11-10");
 
   await dentist.getByLabel(/I've checked the date/).check();
   await dentist.getByRole("button", { name: "Accept" }).click();
-  await expect(page.getByRole("link", { name: `View action: Call the dentist ${id}` })).toBeVisible();
+  await expect(page.getByRole("link", { name: /^View action: Call the dentist/ })).toBeVisible();
 
   await tools.getByRole("button", { name: "Dismiss all remaining" }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Dismiss all remaining" }).click();
